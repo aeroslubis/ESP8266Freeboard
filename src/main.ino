@@ -1,6 +1,5 @@
 #include <ESP8266WiFi.h> /*ESP8266 core wifi library*/
 #include <ESP8266mDNS.h> /*MulticastDNS library*/
-#include <WiFiClient.h> /*Connet to Wifi as client library*/
 #include <ESP8266WebServer.h> /*ESP8266 Webserver library*/
 #include <ESP8266HTTPUpdateServer.h> /*ESP8266 HTTP Over The Air update library*/
 #include "WebSocketsServer.h" /*WebSocket library*/
@@ -8,7 +7,7 @@
 #include "ArduinoJson.h"
 #include "DHTesp.h"
 
-#include "credentials.h"
+#include "credentials.h" /*Default configuration*/
 
 const char* _ssid = DEFAULT_SSID;
 const char* _password = DEFAULT_PASSWORD;
@@ -29,15 +28,6 @@ void setup()
 {
     Serial.begin(115200);
     Serial.print("Connecting to Wifi Access Point");
-    /* Configure Wifi soft access point */
-    /*WiFi.softAPConfig(local_ip, gateway, netmask);*/
-    /*
-      $1 wifi ssid
-      $2 wifi password
-      $3 wifi chaneel
-      $4 wifi hidden ssid
-      $5 wifi maximum number of clients
-    */
     /*WiFi.softAP(_ssid, _password);*/
     WiFi.begin(_ssid, _password);
     while (WiFi.status() != WL_CONNECTED)
@@ -46,10 +36,6 @@ void setup()
         Serial.print('.');
     }
     Serial.println(" OK");
-
-    /*
-     *WiFi.softAPgetStationNum();
-     */
 
     Serial.print("IP Address: ");
     Serial.println(WiFi.localIP());
@@ -146,14 +132,12 @@ void loop()
     if (millis() > previousMillis + 3000 && totalClient > 0)
     {
         previousMillis = millis();
-        sendSensorValue();
+        sendDataValue();
     }
 }
 
 void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length)
 {
-    static uint32_t lastMillis = 0;
-    /*Serial.printf("webSocketEvent(%d, %d, ...)\r\n", num, type);*/
     switch (type)
     {
         case WStype_DISCONNECTED:
@@ -172,30 +156,16 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length
             blink();
             break;
         }
-
-        case WStype_TEXT:
-        {
-            Serial.printf("[%u] [%u ms] get Text: %s\r\n", num, millis()-lastMillis, payload);
-            /*
-             *String message = (char *) payload;
-             *if (message == "sensors")
-             *{
-             *    sendSensorValue(num);
-             *}
-             */
-            lastMillis = millis();
-            break;
-        }
     }
 }
 
-void sendSensorValue()
+void sendDataValue()
 {
     temperature = dht.getTemperature();
     humidity = dht.getHumidity();
     analog = analogRead(A0);
-    pressure = 14;
-    light = 30;
+    pressure = random(14, 16);
+    light = random(25, 32);
 
     StaticJsonBuffer<250> jsonBuffer;
     JsonObject& root = jsonBuffer.createObject();
@@ -216,7 +186,7 @@ void sendSensorValue()
     root["analog"] = analog;
     root["pwm_1"] = pwm1_value;
     root["pwm_2"] = pwm2_value;
-    root["pwm_3"] = pwm2_value;
+    root["pwm_3"] = pwm3_value;
     root["D1"] = digitalRead(D1);
     root["D2"] = digitalRead(D2);
     root["D3"] = digitalRead(D3);
@@ -268,8 +238,6 @@ void handlePWM()
         /*Freeboard slider widget expect a return value, so send one*/
         server.send(200, "text/plain", "OK");
    }
-
-   
 }
 
 void handleESPInfo()
@@ -279,6 +247,7 @@ void handleESPInfo()
     root["ip_address"] = WiFi.localIP().toString();
     root["mac_address"] = WiFi.macAddress();
     root["wifi_mode"] = "STA";
+    root["wifi_signal"] = WiFi.RSSI();
     /*
      *Get ESP8266 free RAM
      */
@@ -292,7 +261,8 @@ void handleESPInfo()
 /*
  *Helper function for reading file from SPIFF
  */
-String formatBytes(size_t bytes) {
+String formatBytes(size_t bytes)
+{
     if (bytes < 1024) return String(bytes)+"B";
     else if (bytes < (1024 * 1024)) return String(bytes/1024.0)+"KB";
     else if (bytes < (1024 * 1024 * 1024)) return String(bytes/1024.0/1024.0)+"MB";
@@ -317,7 +287,8 @@ String getContentType(String filename)
     return "text/plain";
 }
 
-bool handleFileRead(String path) {
+bool handleFileRead(String path)
+{
     Serial.println("Transfering: " + path);
     if (path.endsWith("/")) path += "index.html";
     String contentType = getContentType(path);
@@ -326,7 +297,7 @@ bool handleFileRead(String path) {
     {
         if (SPIFFS.exists(pathWithGz)) path += ".gz";
         File file = SPIFFS.open(path, "r");
-        size_t sent = server.streamFile(file, contentType);
+        server.streamFile(file, contentType);
         file.close();
         return true;
     }
